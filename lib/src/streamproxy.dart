@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:genesmanproxy/genesmanproxy.dart';
+import 'logger.dart';
+import 'utils.dart';
 
 /// Flutter bridge to Go proxy server
 class StreamProxyBridge {
@@ -10,21 +12,39 @@ class StreamProxyBridge {
 
   final int port;
   final String storageDir;
+  final String? userAgent;
+  final ProxyConfig? proxyConfig;
+  
   final Map<String, DownloadMeta> _metadata = {};
+  final Map<String, DataSource> _dataSources = {};
+  final Map<String, Timer> _saveTimers = {};
+  
   HttpServer? _server;
 
-  StreamProxyBridge._({required this.port, required this.storageDir});
+  StreamProxyBridge._({
+    required this.port,
+    required this.storageDir,
+    this.userAgent,
+    this.proxyConfig,
+  });
 
   static Future<StreamProxyBridge> getInstance({
     int port = _defaultPort,
     String?  storageDir,
+    String? userAgent,
+    ProxyConfig? proxyConfig,
   }) async {
     if (_instance == null) {
-      final dir = storageDir ??  
-        '${(await Directory.systemTemp). path}/video_cache';
+      final dir = storageDir ??
+        '${(await Directory.systemTemp).path}/video_cache';
       await Directory(dir).create(recursive: true);
       
-      _instance = StreamProxyBridge. _(port: port, storageDir: dir);
+      _instance = StreamProxyBridge._(
+        port: port,
+        storageDir: dir,
+        userAgent: userAgent,
+        proxyConfig: proxyConfig,
+      );
       await _instance!._startServer();
     }
     return _instance!;
@@ -33,21 +53,21 @@ class StreamProxyBridge {
   /// Get proxy URL for a remote video
   Uri getProxyUrl(String remoteUrl) {
     final encoded = Uri.encodeComponent(remoteUrl);
-    return Uri. parse('http://127.0.0. 1:$port/stream? url=$encoded');
+    return Uri.parse('http://127.0.0.1:$port/stream?url=$encoded');
   }
 
   /// Start the local HTTP proxy server
   Future<void> _startServer() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
-    print('🎬 Stream Proxy running on http://127.0. 0.1:$port');
+    Logger.info('Stream Proxy running on http://127.0.0.1:$port');
 
-    _server! .listen(_handleRequest);
+    _server!.listen(_handleRequest);
   }
 
   /// Handle incoming player requests
   Future<void> _handleRequest(HttpRequest request) async {
     try {
-      final remoteUrl = request. uri.queryParameters['url'];
+      final remoteUrl = request.uri.queryParameters['url'];
       if (remoteUrl == null) {
         request.response.statusCode = HttpStatus.badRequest;
         await request.response.close();
@@ -58,13 +78,24 @@ class StreamProxyBridge {
       final localPath = '$storageDir/$fileId.video';
       final metaPath = '$storageDir/$fileId.meta';
 
+      // Get or create data source
+      var dataSource = _dataSources[fileId];
+      if (dataSource == null) {
+        dataSource = HttpDataSource(
+          url: remoteUrl,
+          userAgent: userAgent,
+          proxyConfig: proxyConfig,
+        );
+        _dataSources[fileId] = dataSource;
+      }
+
       // Get or create metadata
       var meta = _metadata[fileId];
       if (meta == null) {
-        final totalSize = await _getContentLength(remoteUrl);
+        final totalSize = await dataSource.getContentLength();
         if (totalSize <= 0) {
           request.response.statusCode = HttpStatus.badGateway;
-          await request.response. close();
+          await request.response.close();
           return;
         }
 
@@ -85,14 +116,14 @@ class StreamProxyBridge {
       }
 
       // Parse Range header
-      final rangeHeader = request. headers. value('range') ?? 'bytes=0-';
+      final rangeHeader = request.headers.value('range') ?? 'bytes=0-';
       final (start, end) = _parseRange(rangeHeader, meta.totalSize);
 
       // Set response headers (CRITICAL: 206 Partial Content!)
       request.response.statusCode = HttpStatus.partialContent;
-      request. response.headers.add('Accept-Ranges', 'bytes');
+      request.response.headers.add('Accept-Ranges', 'bytes');
       request.response.headers.add('Content-Type', 'video/mp4');
-      request. response.headers.add('Content-Length', '${end - start + 1}');
+      request.response.headers.add('Content-Length', '${end - start + 1}');
       request.response.headers.add(
         'Content-Range', 
         'bytes $start-$end/${meta.totalSize}'
@@ -100,7 +131,7 @@ class StreamProxyBridge {
 
       if (meta.hasRange(start, end)) {
         // Serve from cache
-        await _serveFromDisk(request. response, localPath, start, end);
+        await _serveFromDisk(request.response, localPath, start, end);
       } else {
         // Fetch, cache, and serve
         await _fetchAndServe(
@@ -113,8 +144,8 @@ class StreamProxyBridge {
         );
       }
     } catch (e) {
-      print('❌ Proxy error: $e');
-      request. response.statusCode = HttpStatus.internalServerError;
+      Logger.error('Proxy error: $e');
+      request.response.statusCode = HttpStatus.internalServerError;
     } finally {
       await request.response.close();
     }
@@ -128,14 +159,14 @@ class StreamProxyBridge {
     int end,
   ) async {
     final file = File(path);
-    final raf = await file. open(mode: FileMode.read);
+    final raf = await file.open(mode: FileMode.read);
     await raf.setPosition(start);
     
     final length = end - start + 1;
-    final data = await raf. read(length);
+    final data = await raf.read(length);
     response.add(data);
     
-    await raf. close();
+    await raf.close();
   }
 
   /// Fetch from remote, cache to disk, and stream to player simultaneously
@@ -147,11 +178,13 @@ class StreamProxyBridge {
     int end,
     DownloadMeta meta,
   ) async {
-    final client = HttpClient();
-    final request = await client.getUrl(Uri.parse(url));
-    request.headers.add('Range', 'bytes=$start-$end');
-    
-    final upstream = await request.close();
+    final fileId = meta.id;
+    final dataSource = _dataSources[fileId];
+    if (dataSource == null) {
+      throw StateError('DataSource not found for $fileId');
+    }
+
+    final upstream = await dataSource.fetchRange(start, end);
     
     // Open file for sparse writing
     final file = File(localPath);
@@ -170,9 +203,16 @@ class StreamProxyBridge {
       // 3. Update metadata
       meta.addRange(currentPos, currentPos + chunk.length - 1);
       currentPos += chunk.length;
+      
+      // 4. Debounced save (save every 500ms)
+      _scheduleDebouncedSave(fileId, meta);
     }
     
     await raf.close();
+    
+    // Cancel any pending save and do final save
+    _saveTimers[fileId]?.cancel();
+    _saveTimers.remove(fileId);
     await meta.save();
     
     // Check if download is complete
@@ -181,9 +221,18 @@ class StreamProxyBridge {
     }
   }
 
+  /// Schedule a debounced save for metadata
+  void _scheduleDebouncedSave(String fileId, DownloadMeta meta) {
+    _saveTimers[fileId]?.cancel();
+    _saveTimers[fileId] = Timer(const Duration(milliseconds: 500), () async {
+      await meta.save();
+      _saveTimers.remove(fileId);
+    });
+  }
+
   /// Handle completed download
   Future<void> _onDownloadComplete(DownloadMeta meta) async {
-    print('✅ Download complete: ${meta.id}');
+    Logger.success('Download complete: ${meta.id}');
     
     // Delete metadata file
     await File(meta.metaPath).delete();
@@ -194,15 +243,7 @@ class StreamProxyBridge {
     await File(meta.localPath).rename('$collectionsDir/${meta.id}.mp4');
     
     // Notify UI (you'd use a StreamController or similar)
-    _metadata.remove(meta. id);
-  }
-
-  /// Get content length via HEAD request
-  Future<int> _getContentLength(String url) async {
-    final client = HttpClient();
-    final request = await client.openUrl('HEAD', Uri.parse(url));
-    final response = await request.close();
-    return response.contentLength;
+    _metadata.remove(meta.id);
   }
 
   /// Parse HTTP Range header
@@ -213,17 +254,14 @@ class StreamProxyBridge {
     
     final start = int.parse(match.group(1)!);
     final endStr = match.group(2);
-    final end = endStr != null && endStr.isNotEmpty 
-      ? int. parse(endStr) 
+    final end = endStr != null && endStr.isNotEmpty
+      ? int.parse(endStr)
       : totalSize - 1;
     
     return (start, end);
   }
 
-  String _hashUrl(String url) {
-    // Simple hash - use crypto in production
-    return url.hashCode.toRadixString(16). padLeft(16, '0');
-  }
+  String _hashUrl(String url) => DownStreamUtils.hashUrl(url);
 
   /// Get download progress for a URL
   double getProgress(String url) {
@@ -231,8 +269,44 @@ class StreamProxyBridge {
     return _metadata[fileId]?.progress ?? 0.0;
   }
 
+  /// Cancel a download task
+  Future<void> cancelDownload(String url) async {
+    final fileId = _hashUrl(url);
+    
+    // Cancel data source
+    final dataSource = _dataSources[fileId];
+    if (dataSource != null) {
+      await dataSource.cancel();
+      _dataSources.remove(fileId);
+    }
+    
+    // Cancel pending save
+    _saveTimers[fileId]?.cancel();
+    _saveTimers.remove(fileId);
+    
+    Logger.cancel('Download cancelled: $url');
+  }
+
+  /// Get file stats for a URL
+  Stream<FileStat>? getFileStats(String url) {
+    final fileId = _hashUrl(url);
+    return _dataSources[fileId]?.fileStats;
+  }
+
   /// Shutdown the proxy
   Future<void> dispose() async {
+    // Cancel all pending saves
+    for (var timer in _saveTimers.values) {
+      timer.cancel();
+    }
+    _saveTimers.clear();
+    
+    // Dispose all data sources
+    for (var dataSource in _dataSources.values) {
+      await dataSource.dispose();
+    }
+    _dataSources.clear();
+    
     await _server?.close();
     _instance = null;
   }
