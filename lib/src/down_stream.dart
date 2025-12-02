@@ -1,8 +1,7 @@
 import 'dart:io';
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:genesmanproxy/genesmanproxy.dart';
 import 'logger.dart';
+import 'utils.dart';
 
 /// Main API for the DownStream package
 class DownStream {
@@ -133,18 +132,18 @@ class DownStream {
     return downloads;
   }
 
-  /// Hash URL to generate file ID using SHA-256
-  String _hashUrl(String url) {
-    final bytes = utf8.encode(url);
-    final digest = sha256.convert(bytes);
-    return digest.toString().substring(0, 16);
+  String _hashUrl(String url) => DownStreamUtils.hashUrl(url);
+
+  /// Remove cached file and metadata by URL
+  Future<void> removeCache(String url) async {
+    final fileId = _hashUrl(url);
+    await removeCacheById(fileId);
   }
 
-  /// Remove cached file and metadata
-  Future<void> removeCache(String url) async {
+  /// Remove cached file and metadata by file ID
+  Future<void> removeCacheById(String fileId) async {
     if (_storageDir == null) return;
     
-    final fileId = _hashUrl(url);
     final videoPath = '$_storageDir/$fileId.video';
     final metaPath = '$_storageDir/$fileId.meta';
     

@@ -225,8 +225,18 @@ class MimeTypeDetector {
     if (bytes.length < 16) return null;
     
     // Video formats
-    // MP4 files have 'ftyp' at offset 4-7
+    // MP4 files have 'ftyp' at offset 4-7, followed by brand at 8-11
     if (bytes.length >= 12 && _matchesSignature(bytes.sublist(4, 8), [0x66, 0x74, 0x79, 0x70])) {
+      // Check for common MP4 brands: isom, mp41, mp42, avc1, iso2, etc.
+      if (bytes.length >= 12) {
+        final brand = String.fromCharCodes(bytes.sublist(8, 12));
+        if (brand.startsWith('iso') || brand.startsWith('mp4') || 
+            brand.startsWith('avc') || brand.startsWith('M4V') ||
+            brand.startsWith('qt')) {
+          return 'video/mp4';
+        }
+      }
+      // Default to mp4 if ftyp is present
       return 'video/mp4';
     }
     if (_matchesSignature(bytes, [0x1A, 0x45, 0xDF, 0xA3])) {

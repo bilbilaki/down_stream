@@ -162,9 +162,9 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<void> _removeCache(String url) async {
+  Future<void> _removeCache(String fileId) async {
     try {
-      await DownStream.instance.removeCache(url);
+      await DownStream.instance.removeCacheById(fileId);
       _loadDownloads();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cache removed')),

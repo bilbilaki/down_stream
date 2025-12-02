@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
 
 import 'package:genesmanproxy/genesmanproxy.dart';
 import 'logger.dart';
+import 'utils.dart';
 
 /// Flutter bridge to Go proxy server
 class StreamProxyBridge {
@@ -262,12 +261,7 @@ class StreamProxyBridge {
     return (start, end);
   }
 
-  String _hashUrl(String url) {
-    // Use SHA-256 for secure, collision-resistant hashing
-    final bytes = utf8.encode(url);
-    final digest = sha256.convert(bytes);
-    return digest.toString().substring(0, 16);
-  }
+  String _hashUrl(String url) => DownStreamUtils.hashUrl(url);
 
   /// Get download progress for a URL
   double getProgress(String url) {
