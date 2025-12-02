@@ -1,7 +1,7 @@
 name: genesmanproxy
-description: "A new Flutter package project."
+description: "A Flutter package that acts as a local proxy server to simultaneously stream, download, cache, and manage media/files with support for sparse (non-linear) access."
 version: 0.0.1
-homepage:
+homepage: https://github.com/bilbilaki/down_stream
 
 environment:
   sdk: ^3.10.1
