@@ -29,3 +29,10 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
+
+# Example app
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+example/.metadata
+example/build/
+example/pubspec.lock
