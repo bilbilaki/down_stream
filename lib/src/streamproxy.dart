@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 
 import 'package:genesmanproxy/genesmanproxy.dart';
+import 'logger.dart';
 
 /// Flutter bridge to Go proxy server
 class StreamProxyBridge {
@@ -57,7 +60,7 @@ class StreamProxyBridge {
   /// Start the local HTTP proxy server
   Future<void> _startServer() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
-    print('🎬 Stream Proxy running on http://127.0. 0.1:$port');
+    Logger.info('Stream Proxy running on http://127.0.0.1:$port');
 
     _server! .listen(_handleRequest);
   }
@@ -142,7 +145,7 @@ class StreamProxyBridge {
         );
       }
     } catch (e) {
-      print('❌ Proxy error: $e');
+      Logger.error('Proxy error: $e');
       request. response.statusCode = HttpStatus.internalServerError;
     } finally {
       await request.response.close();
@@ -230,7 +233,7 @@ class StreamProxyBridge {
 
   /// Handle completed download
   Future<void> _onDownloadComplete(DownloadMeta meta) async {
-    print('✅ Download complete: ${meta.id}');
+    Logger.success('Download complete: ${meta.id}');
     
     // Delete metadata file
     await File(meta.metaPath).delete();
@@ -260,8 +263,10 @@ class StreamProxyBridge {
   }
 
   String _hashUrl(String url) {
-    // Simple hash - use crypto in production
-    return url.hashCode.toRadixString(16). padLeft(16, '0');
+    // Use SHA-256 for secure, collision-resistant hashing
+    final bytes = utf8.encode(url);
+    final digest = sha256.convert(bytes);
+    return digest.toString().substring(0, 16);
   }
 
   /// Get download progress for a URL
@@ -285,7 +290,7 @@ class StreamProxyBridge {
     _saveTimers[fileId]?.cancel();
     _saveTimers.remove(fileId);
     
-    print('❌ Download cancelled: $url');
+    Logger.cancel('Download cancelled: $url');
   }
 
   /// Get file stats for a URL

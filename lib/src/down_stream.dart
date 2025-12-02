@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:genesmanproxy/genesmanproxy.dart';
+import 'logger.dart';
 
 /// Main API for the DownStream package
 class DownStream {
@@ -130,11 +133,18 @@ class DownStream {
     return downloads;
   }
 
+  /// Hash URL to generate file ID using SHA-256
+  String _hashUrl(String url) {
+    final bytes = utf8.encode(url);
+    final digest = sha256.convert(bytes);
+    return digest.toString().substring(0, 16);
+  }
+
   /// Remove cached file and metadata
   Future<void> removeCache(String url) async {
     if (_storageDir == null) return;
     
-    final fileId = url.hashCode.toRadixString(16).padLeft(16, '0');
+    final fileId = _hashUrl(url);
     final videoPath = '$_storageDir/$fileId.video';
     final metaPath = '$_storageDir/$fileId.meta';
     
@@ -164,7 +174,7 @@ class DownStream {
   Future<bool> exportFile(String url, String targetPath) async {
     if (_storageDir == null) return false;
     
-    final fileId = url.hashCode.toRadixString(16).padLeft(16, '0');
+    final fileId = _hashUrl(url);
     
     // Check collections folder first
     if (_collectionsDir != null) {
@@ -209,13 +219,13 @@ class DownStream {
         
         // If video exists but no metadata, treat as imported/completed
         if (!metaExists) {
-          print('✅ Validated complete file: $id');
+          Logger.success('Validated complete file: $id');
           // Optionally move to collections
           if (_collectionsDir != null) {
             final targetPath = '$_collectionsDir/$id.mp4';
             if (!await File(targetPath).exists()) {
               await entity.rename(targetPath);
-              print('📦 Moved to collections: $id');
+              Logger.info('Moved to collections: $id');
             }
           }
         }

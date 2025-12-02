@@ -225,7 +225,8 @@ class MimeTypeDetector {
     if (bytes.length < 16) return null;
     
     // Video formats
-    if (_matchesSignature(bytes, [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])) {
+    // MP4 files have 'ftyp' at offset 4-7
+    if (bytes.length >= 12 && _matchesSignature(bytes.sublist(4, 8), [0x66, 0x74, 0x79, 0x70])) {
       return 'video/mp4';
     }
     if (_matchesSignature(bytes, [0x1A, 0x45, 0xDF, 0xA3])) {

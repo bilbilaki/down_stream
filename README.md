@@ -112,6 +112,14 @@ final success = await DownStream.instance.exportFile(
 );
 ```
 
+### Logging Configuration
+
+```dart
+// Enable or disable logging (enabled by default)
+Logger.setEnabled(false);  // Disable all logs
+Logger.setEnabled(true);   // Enable logs
+```
+
 ### Cleanup
 
 ```dart
