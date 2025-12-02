@@ -46,26 +46,23 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _initDownStream() async {
     try {
-      await DownStream.init(
-        port: 8080,
-        userAgent: 'DownStreamExample/1.0',
-      );
+      await DownStream.init(port: 8080, userAgent: 'DownStreamExample/1.0');
       setState(() {
         _isInitialized = true;
       });
       _loadDownloads();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to initialize: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to initialize: $e')));
       }
     }
   }
 
   Future<void> _loadDownloads() async {
     if (!_isInitialized) return;
-    
+
     try {
       final downloads = await DownStream.instance.getAllDownloads();
       setState(() {
@@ -73,9 +70,9 @@ class _MyHomePageState extends State<MyHomePage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load downloads: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load downloads: $e')));
       }
     }
   }
@@ -90,23 +87,24 @@ class _MyHomePageState extends State<MyHomePage> {
 
     final url = _urlController.text.trim();
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a URL')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter a URL')));
       return;
     }
 
     try {
       // Get proxy URL
+
       final proxyUrl = DownStream.instance.cache(url);
-      
+
       // Listen to file stats
       DownStream.instance.getFileStats(url)?.listen((stat) {
         setState(() {
           _fileStat = stat;
         });
       });
-      
+
       setState(() {
         _proxyUrl = proxyUrl.toString();
       });
@@ -114,25 +112,25 @@ class _MyHomePageState extends State<MyHomePage> {
       // Start tracking progress
       _trackProgress(url);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Proxy URL: $proxyUrl')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Proxy URL: $proxyUrl')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
   void _trackProgress(String url) {
     Future.delayed(const Duration(seconds: 1), () {
       if (!mounted || !_isInitialized) return;
-      
+
       final progress = DownStream.instance.getProgress(url);
       setState(() {
         _progress = progress;
       });
-      
+
       if (progress < 100.0) {
         _trackProgress(url);
       } else {
@@ -152,27 +150,28 @@ class _MyHomePageState extends State<MyHomePage> {
         _proxyUrl = null;
         _fileStat = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Download cancelled')),
-      );
+    await  _removeCache(url);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Download cancelled')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cancelling: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error cancelling: $e')));
     }
   }
 
-  Future<void> _removeCache(String fileId) async {
+  Future<void> _removeCache(String url) async {
     try {
-      await DownStream.instance.removeCacheById(fileId);
+      await DownStream.instance.removeCache(url);
       _loadDownloads();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cache removed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cache removed')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error removing cache: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error removing cache: $e')));
     }
   }
 
@@ -195,9 +194,7 @@ class _MyHomePageState extends State<MyHomePage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (!_isInitialized)
-              const Center(
-                child: CircularProgressIndicator(),
-              )
+              const Center(child: CircularProgressIndicator())
             else ...[
               TextField(
                 controller: _urlController,
@@ -250,13 +247,13 @@ class _MyHomePageState extends State<MyHomePage> {
                         if (_fileStat != null) ...[
                           const SizedBox(height: 16),
                           Text('File: ${_fileStat!.fileName ?? "Unknown"}'),
-                          Text('Size: ${_formatBytes(_fileStat!.totalSize ?? 0)}'),
+                          Text(
+                            'Size: ${_formatBytes(_fileStat!.totalSize ?? 0)}',
+                          ),
                           Text('Type: ${_fileStat!.mimeType ?? "Unknown"}'),
                         ],
                         const SizedBox(height: 16),
-                        LinearProgressIndicator(
-                          value: _progress / 100,
-                        ),
+                        LinearProgressIndicator(value: _progress / 100),
                         const SizedBox(height: 8),
                         Text(
                           'Progress: ${_progress.toStringAsFixed(1)}%',
@@ -268,10 +265,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ],
               const SizedBox(height: 24),
-              Text(
-                'Downloads',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text('Downloads', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
               Expanded(
                 child: _downloads.isEmpty

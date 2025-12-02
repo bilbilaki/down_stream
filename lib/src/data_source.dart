@@ -167,11 +167,11 @@ class HttpDataSource implements DataSource {
     if (contentDisposition == null) return null;
     
     // Try to extract filename from Content-Disposition header
-    final match = RegExp(r'filename[^;=\n]*=(([\'"]).*?\2|[^;\n]*)').firstMatch(contentDisposition);
+    final match = RegExp(r'filename[^;=\n]*=(([\"]).*?\2|[^;\n]*)').firstMatch(contentDisposition);
     if (match != null) {
       var fileName = match.group(1);
       if (fileName != null) {
-        fileName = fileName.replaceAll(RegExp(r'^["\']|["\']$'), '');
+        fileName = fileName.replaceAll(RegExp(r'^[^;=\n]*=(([\"])*?\2|[^;\n]*)'),'');
         return fileName;
       }
     }

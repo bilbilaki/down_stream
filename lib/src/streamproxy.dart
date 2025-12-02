@@ -66,7 +66,7 @@ class StreamProxyBridge {
 
   /// Handle incoming player requests
   Future<void> _handleRequest(HttpRequest request) async {
-    try:
+    try {
       final remoteUrl = request.uri.queryParameters['url'];
       if (remoteUrl == null) {
         request.response.statusCode = HttpStatus.badRequest;

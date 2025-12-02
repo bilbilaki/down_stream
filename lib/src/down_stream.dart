@@ -1,7 +1,5 @@
 import 'dart:io';
 import 'package:genesmanproxy/genesmanproxy.dart';
-import 'logger.dart';
-import 'utils.dart';
 
 /// Main API for the DownStream package
 class DownStream {
