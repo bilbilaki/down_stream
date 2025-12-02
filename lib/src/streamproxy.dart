@@ -35,11 +35,11 @@ class StreamProxyBridge {
     ProxyConfig? proxyConfig,
   }) async {
     if (_instance == null) {
-      final dir = storageDir ??  
-        '${(await Directory.systemTemp). path}/video_cache';
+      final dir = storageDir ??
+        '${(await Directory.systemTemp).path}/video_cache';
       await Directory(dir).create(recursive: true);
       
-      _instance = StreamProxyBridge. _(
+      _instance = StreamProxyBridge._(
         port: port,
         storageDir: dir,
         userAgent: userAgent,
@@ -53,7 +53,7 @@ class StreamProxyBridge {
   /// Get proxy URL for a remote video
   Uri getProxyUrl(String remoteUrl) {
     final encoded = Uri.encodeComponent(remoteUrl);
-    return Uri. parse('http://127.0.0. 1:$port/stream? url=$encoded');
+    return Uri.parse('http://127.0.0.1:$port/stream?url=$encoded');
   }
 
   /// Start the local HTTP proxy server
@@ -61,13 +61,13 @@ class StreamProxyBridge {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     Logger.info('Stream Proxy running on http://127.0.0.1:$port');
 
-    _server! .listen(_handleRequest);
+    _server!.listen(_handleRequest);
   }
 
   /// Handle incoming player requests
   Future<void> _handleRequest(HttpRequest request) async {
-    try {
-      final remoteUrl = request. uri.queryParameters['url'];
+    try:
+      final remoteUrl = request.uri.queryParameters['url'];
       if (remoteUrl == null) {
         request.response.statusCode = HttpStatus.badRequest;
         await request.response.close();
@@ -95,7 +95,7 @@ class StreamProxyBridge {
         final totalSize = await dataSource.getContentLength();
         if (totalSize <= 0) {
           request.response.statusCode = HttpStatus.badGateway;
-          await request.response. close();
+          await request.response.close();
           return;
         }
 
@@ -116,14 +116,14 @@ class StreamProxyBridge {
       }
 
       // Parse Range header
-      final rangeHeader = request. headers. value('range') ?? 'bytes=0-';
+      final rangeHeader = request.headers.value('range') ?? 'bytes=0-';
       final (start, end) = _parseRange(rangeHeader, meta.totalSize);
 
       // Set response headers (CRITICAL: 206 Partial Content!)
       request.response.statusCode = HttpStatus.partialContent;
-      request. response.headers.add('Accept-Ranges', 'bytes');
+      request.response.headers.add('Accept-Ranges', 'bytes');
       request.response.headers.add('Content-Type', 'video/mp4');
-      request. response.headers.add('Content-Length', '${end - start + 1}');
+      request.response.headers.add('Content-Length', '${end - start + 1}');
       request.response.headers.add(
         'Content-Range', 
         'bytes $start-$end/${meta.totalSize}'
@@ -131,7 +131,7 @@ class StreamProxyBridge {
 
       if (meta.hasRange(start, end)) {
         // Serve from cache
-        await _serveFromDisk(request. response, localPath, start, end);
+        await _serveFromDisk(request.response, localPath, start, end);
       } else {
         // Fetch, cache, and serve
         await _fetchAndServe(
@@ -145,7 +145,7 @@ class StreamProxyBridge {
       }
     } catch (e) {
       Logger.error('Proxy error: $e');
-      request. response.statusCode = HttpStatus.internalServerError;
+      request.response.statusCode = HttpStatus.internalServerError;
     } finally {
       await request.response.close();
     }
@@ -159,14 +159,14 @@ class StreamProxyBridge {
     int end,
   ) async {
     final file = File(path);
-    final raf = await file. open(mode: FileMode.read);
+    final raf = await file.open(mode: FileMode.read);
     await raf.setPosition(start);
     
     final length = end - start + 1;
-    final data = await raf. read(length);
+    final data = await raf.read(length);
     response.add(data);
     
-    await raf. close();
+    await raf.close();
   }
 
   /// Fetch from remote, cache to disk, and stream to player simultaneously
@@ -243,7 +243,7 @@ class StreamProxyBridge {
     await File(meta.localPath).rename('$collectionsDir/${meta.id}.mp4');
     
     // Notify UI (you'd use a StreamController or similar)
-    _metadata.remove(meta. id);
+    _metadata.remove(meta.id);
   }
 
   /// Parse HTTP Range header
@@ -254,8 +254,8 @@ class StreamProxyBridge {
     
     final start = int.parse(match.group(1)!);
     final endStr = match.group(2);
-    final end = endStr != null && endStr.isNotEmpty 
-      ? int. parse(endStr) 
+    final end = endStr != null && endStr.isNotEmpty
+      ? int.parse(endStr)
       : totalSize - 1;
     
     return (start, end);
