@@ -11,6 +11,8 @@ dependencies:
   flutter:
     sdk: flutter
   crypto: ^3.0.3
+  synchronized: ^3.3.0+3  # Async mutex for file locking
+  path: ^1.9.0  # Path manipulation for file export
 
 dev_dependencies:
   flutter_test:
