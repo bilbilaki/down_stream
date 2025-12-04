@@ -7,8 +7,8 @@ class DownStream {
   static DownStream? _instance;
   static StreamProxyBridge? _proxy;
 
-  String? _storageDir;
-  String? _collectionsDir;
+  String? storageDir;
+  String? collectionsDir;
 
   DownStream._();
 
@@ -24,11 +24,11 @@ class DownStream {
 
       final dir =
           storageDir ?? '${Directory.systemTemp.path}/down_stream_cache';
-      _instance!._storageDir = dir;
-      _instance!._collectionsDir = '$dir/collections';
+      _instance!.storageDir = dir;
+      _instance!.collectionsDir = '$dir/collections';
 
       await Directory(dir).create(recursive: true);
-      await Directory(_instance!._collectionsDir!).create(recursive: true);
+      await Directory(_instance!.collectionsDir!).create(recursive: true);
 
       _proxy = await StreamProxyBridge.getInstance(
         port: port,
@@ -120,13 +120,13 @@ class DownStream {
   Future<List<DownloadInfo>> getAllDownloads() async {
     final downloads = <DownloadInfo>[];
 
-    if (_storageDir == null || _proxy == null) return downloads;
+    if (storageDir == null || _proxy == null) return downloads;
 
     // Get from proxy (accurate progress)
     final ids = await _proxy!.getCachedFileIds();
     for (final id in ids) {
       final meta = _proxy!.getMetadataById(id);
-      final path = '$_storageDir/$id.video';
+      final path = '$storageDir/$id.video';
       final file = File(path);
 
       if (await file.exists()) {
@@ -146,10 +146,10 @@ class DownStream {
     }
 
     // Scan collections folder
-    if (_collectionsDir != null) {
-      final collectionsDir = Directory(_collectionsDir!);
-      if (await collectionsDir.exists()) {
-        await for (final entity in collectionsDir.list()) {
+    if (collectionsDir != null) {
+      final collectionsDirm = Directory(collectionsDir!);
+      if (await collectionsDirm.exists()) {
+        await for (final entity in collectionsDirm.list()) {
           if (entity is File &&
               (entity.path.endsWith('.mp4') ||
                   entity.path.endsWith('.mkv') ||
@@ -187,10 +187,10 @@ class DownStream {
 
   /// Remove cached file and metadata by file ID
   Future<void> removeCacheById(String fileId) async {
-    if (_storageDir == null) return;
+    if (storageDir == null) return;
 
-    final videoPath = '$_storageDir/$fileId.video';
-    final metaPath = '$_storageDir/$fileId.meta';
+    final videoPath = '$storageDir/$fileId.video';
+    final metaPath = '$storageDir/$fileId.meta';
 
     // Delete video file
     final videoFile = File(videoPath);
@@ -205,10 +205,10 @@ class DownStream {
     }
 
     // Check collections folder
-    if (_collectionsDir != null) {
-      final collectionsDir = Directory(_collectionsDir!);
-      if (await collectionsDir.exists()) {
-        await for (final entity in collectionsDir.list()) {
+    if (collectionsDir != null) {
+      final collectionsDirm = Directory(collectionsDir!);
+      if (await collectionsDirm.exists()) {
+        await for (final entity in collectionsDirm.list()) {
           if (entity is File &&
               p.basenameWithoutExtension(entity.path) == fileId) {
             await entity.delete();
@@ -293,9 +293,9 @@ class DownStream {
   /// Validate files on startup
   /// If a .video file exists but .meta is missing, treat as completed
   Future<void> _validateFiles() async {
-    if (_storageDir == null) return;
+    if (storageDir == null) return;
 
-    final dir = Directory(_storageDir!);
+    final dir = Directory(storageDir!);
     if (!await dir.exists()) return;
 
     await for (final entity in dir.list()) {
@@ -303,15 +303,15 @@ class DownStream {
         final id = p
             .basenameWithoutExtension(entity.path)
             .replaceAll('.video', '');
-        final metaPath = '$_storageDir/$id.meta';
+        final metaPath = '$storageDir/$id.meta';
         final metaExists = await File(metaPath).exists();
 
         // If video exists but no metadata, treat as imported/completed
         if (!metaExists) {
           Logger.success('Validated complete file: $id');
           // Optionally move to collections
-          if (_collectionsDir != null) {
-            final targetPath = '$_collectionsDir/$id.mp4';
+          if (collectionsDir != null) {
+            final targetPath = '$collectionsDir/$id.mp4';
             if (!await File(targetPath).exists()) {
               try {
                 await entity.rename(targetPath);
