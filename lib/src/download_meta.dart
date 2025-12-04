@@ -28,6 +28,7 @@ class DownloadMeta {
   final String? originalUrl; // Store original URL for reverse lookup
   String? mimeType; // Detected MIME type
   String? fileName; // Extracted filename from URL or headers
+  String? targetPath; // Final target path for file after download completes
 
   List<ByteRange> _ranges = [];
   bool _needsMerge =
@@ -270,6 +271,7 @@ class DownloadMeta {
         'originalUrl': originalUrl,
         'mimeType': mimeType,
         'fileName': fileName,
+        'targetPath': targetPath,
         'bitmapOffset': 0, // Placeholder
       });
       final headerBytes = utf8.encode(header);
@@ -294,6 +296,7 @@ class DownloadMeta {
         'originalUrl': originalUrl,
         'mimeType': mimeType,
         'fileName': fileName,
+        'targetPath': targetPath,
         'ranges': _ranges.map((r) => r.toJson()).toList(),
       });
       await file.writeAsString(json);
@@ -320,6 +323,7 @@ class DownloadMeta {
 
         mimeType = data['mimeType'] as String?;
         fileName = data['fileName'] as String?;
+        targetPath = data['targetPath'] as String?;
 
         _bitmap = Uint8List.fromList(bytes.sublist(4 + headerLen));
       } else {
@@ -330,6 +334,7 @@ class DownloadMeta {
             .toList();
         mimeType = data['mimeType'] as String?;
         fileName = data['fileName'] as String?;
+        targetPath = data['targetPath'] as String?;
         _needsMerge = false; // Data from disk is already merged
       }
     } catch (e) {

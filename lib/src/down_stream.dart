@@ -290,6 +290,21 @@ class DownStream {
     return _proxy?.getMetadata(url);
   }
 
+  // ============== DOWNLOAD TARGET PATH ==============
+
+  /// Set target path for a download (where file will be moved after completion)
+  /// Call this before or during download to specify final destination
+  void setDownloadTarget(String url, String targetPath) {
+    if (_proxy == null) return;
+    _proxy!.setDownloadTarget(url, targetPath);
+  }
+
+  /// Set target path for a download by file ID
+  void setDownloadTargetById(String fileId, String targetPath) {
+    if (_proxy == null) return;
+    _proxy!.setDownloadTargetById(fileId, targetPath);
+  }
+
   /// Validate files on startup
   /// If a .video file exists but .meta is missing, treat as completed
   Future<void> _validateFiles() async {

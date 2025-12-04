@@ -357,12 +357,23 @@ class StreamProxyBridge {
     // Delete metadata file
     await File(meta.metaPath).delete();
 
-    // Move to collections folder
-    final collectionsDir = '$storageDir/../collections';
-    await Directory(_outDir ?? collectionsDir).create(recursive: true);
-    await File(
-      meta.localPath,
-    ).rename('${_outDir ?? collectionsDir}/${_outname ?? meta.id}.mp4');
+    // Determine final destination path
+    String finalPath;
+    if (meta.targetPath != null && meta.targetPath!.isNotEmpty) {
+      // Use the specified target path
+      finalPath = meta.targetPath!;
+      // Ensure directory exists
+      await Directory(finalPath).parent.create(recursive: true);
+    } else {
+      // Use default collections folder
+      final collectionsDir = '$storageDir/../collections';
+      await Directory(_outDir ?? collectionsDir).create(recursive: true);
+      finalPath = '${_outDir ?? collectionsDir}/${_outname ?? meta.id}.mp4';
+    }
+
+    // Move file to final destination
+    await File(meta.localPath).rename(finalPath);
+    Logger.success('File moved to: $finalPath');
 
     // Notify UI (you'd use a StreamController or similar)
     _metadata.remove(meta.id);
@@ -750,6 +761,23 @@ class StreamProxyBridge {
   /// Get metadata by file ID
   DownloadMeta? getMetadataById(String fileId) {
     return _metadata[fileId];
+  }
+
+  /// Set target path for a download (where file will be moved after completion)
+  void setDownloadTarget(String url, String targetPath) {
+    final fileId = _hashUrl(url);
+    final meta = _metadata[fileId];
+    if (meta != null) {
+      meta.targetPath = targetPath;
+    }
+  }
+
+  /// Set target path for a download by file ID
+  void setDownloadTargetById(String fileId, String targetPath) {
+    final meta = _metadata[fileId];
+    if (meta != null) {
+      meta.targetPath = targetPath;
+    }
   }
 
   /// Shutdown the proxy
