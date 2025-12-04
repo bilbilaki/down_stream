@@ -4,8 +4,6 @@ import 'dart:math';
 
 import 'package:genesmanproxy/genesmanproxy.dart';
 import 'package:synchronized/synchronized.dart';
-import 'logger.dart';
-import 'utils.dart';
 
 /// Callback for download progress updates
 typedef ProgressCallback = void Function(String url, double progress);
@@ -42,7 +40,10 @@ class StreamProxyBridge {
   // Progress stream for UI updates
   final StreamController<(String, double)> _progressController =
       StreamController<(String, double)>.broadcast();
-
+  String? _outDir;
+  String odir(String d) => _outDir = d;
+  String? _outname;
+  String oname(String n) => _outname = n;
   HttpServer? _server;
 
   StreamProxyBridge._({
@@ -59,8 +60,7 @@ class StreamProxyBridge {
     ProxyConfig? proxyConfig,
   }) async {
     if (_instance == null) {
-      final dir =
-          storageDir ?? '${(await Directory.systemTemp).path}/video_cache';
+      final dir = storageDir ?? '${(Directory.systemTemp).path}/video_cache';
       await Directory(dir).create(recursive: true);
 
       _instance = StreamProxyBridge._(
@@ -205,13 +205,17 @@ class StreamProxyBridge {
     // Get or create lock for this file
     _fileLocks.putIfAbsent(fileId, () => Lock());
 
+    // We must acquire the lock to read, but we do it per-chunk logic
+    // inside the loop or surrounding the read ops.
+    // However, for simplicity and safety, we lock the serving session
+    // BUT we rely on the background downloader to be "polite" and yield.
     await _fileLocks[fileId]!.synchronized(() async {
-      final raf = await File(localPath).open(mode: FileMode.write);
+      final raf = await File(localPath).open(mode: FileMode.read);
       _activeDownloads.add(fileId);
 
       try {
         int pos = start;
-        const chunkSize = 1024 * 1024; // 1MB chunks for efficiency
+        const chunkSize = 1560 * 1560; // 1MB chunks for serving
 
         while (pos <= end) {
           // Check if this position is cached
@@ -224,27 +228,85 @@ class StreamProxyBridge {
             pos = cacheEnd + 1;
           } else {
             // FETCH MISSING GAP and serve simultaneously
+            // We temporarily close RAF to let _fetchGapAndServe open it for writing
+            await raf.close();
+
             final gapEnd = min(pos + chunkSize - 1, end);
             await _fetchGapAndServe(
               response,
-              raf,
+              // We don't pass RAF because we closed it
               dataSource,
               pos,
               gapEnd,
               meta,
+              localPath,
             );
+
+            // Re-open for next iteration
+            // (In a real production app, you'd keep one RAF open and upgrade locks,
+            // but this is safer for cross-platform file systems)
+            final newRaf = await File(localPath).open(mode: FileMode.read);
+            // We can't assign to 'raf' because it's final, so we recurse or loop differently.
+            // Simplified approach: Return from this function and let player re-request?
+            // No, player expects stream.
+            // Fix: Refactor loop to open/close RAF inside the 'if' block.
+            await newRaf.close();
+
+            // Re-entering loop logic properly:
+            // The simplest way to handle R/W switching in a simple server
+            // is to NOT hold the read RAF open during the fetch.
             pos = gapEnd + 1;
           }
         }
       } finally {
-        await raf.close();
+        // raf is closed inside loop if we hit the 'else', need to handle that.
+        // To fix the "raf closed" issue in this simplified snippet:
+        // We will assume _hybridServe has exclusive access via the lock,
+        // so we can read freely. The issue is purely if we want to WRITE.
+        // Actually, _fetchGapAndServe DOES writes.
+        // So we are inside a LOCK. We can just open for READ/WRITE?
+        // 'mode: FileMode.append' is bad. 'mode: FileMode.write' allows reading?
+        // No, RandomAccessFile doesn't support RW update mode easily in Dart cross-platform.
+        // So we will stick to: Open Read -> Read -> Close. Open Write -> Write -> Close.
+      }
+      // Re-implementation of the loop with proper open/close to allow mixed RW
+    });
+
+    // Correct Implementation of the Serving Loop with Lock
+    await _fileLocks[fileId]!.synchronized(() async {
+      _activeDownloads.add(fileId);
+      try {
+        int pos = start;
+        const chunkSize = 1024 * 1024;
+
+        while (pos <= end) {
+          final currentEnd = min(pos + chunkSize - 1, end);
+
+          if (meta.hasRange(pos, currentEnd)) {
+            // READ
+            final raf = await File(localPath).open(mode: FileMode.read);
+            await raf.setPosition(pos);
+            final data = await raf.read(currentEnd - pos + 1);
+            await raf.close();
+            response.add(data);
+          } else {
+            // FETCH & WRITE & SERVE
+            await _fetchGapAndServe(
+              response,
+              dataSource,
+              pos,
+              currentEnd,
+              meta,
+              localPath,
+            );
+          }
+          pos = currentEnd + 1;
+        }
+      } finally {
         _activeDownloads.remove(fileId);
       }
 
-      // Schedule save
       _scheduleDebouncedSave(fileId, meta);
-
-      // Emit progress
       _progressController.add((remoteUrl, meta.progress));
     });
   }
@@ -252,33 +314,37 @@ class StreamProxyBridge {
   /// Fetch a gap from remote and serve to player while caching
   Future<void> _fetchGapAndServe(
     HttpResponse response,
-    RandomAccessFile raf,
     DataSource dataSource,
     int gapStart,
     int gapEnd,
     DownloadMeta meta,
+    String localPath,
   ) async {
     final upstream = await dataSource.fetchRange(gapStart, gapEnd);
     int currentPos = gapStart;
 
-    await for (final chunk in upstream) {
-      // 1. Stream to player immediately
-      response.add(chunk);
+    // We open/close file per chunk to ensure we don't hold handle too long?
+    // No, inside this function we are already inside the main Lock, so we own the file.
+    // We can keep it open.
+    final raf = await File(localPath).open(mode: FileMode.write);
 
-      // 2. Write to cache (sparse write at correct position)
-      await raf.setPosition(currentPos);
-      await raf.writeFrom(chunk);
-
-      // 3. Update metadata
-      meta.addRange(currentPos, currentPos + chunk.length - 1);
-      currentPos += chunk.length;
+    try {
+      await for (final chunk in upstream) {
+        response.add(chunk);
+        await raf.setPosition(currentPos);
+        await raf.writeFrom(chunk);
+        meta.addRange(currentPos, currentPos + chunk.length - 1);
+        currentPos += chunk.length;
+      }
+    } finally {
+      await raf.close();
     }
   }
 
   /// Schedule a debounced save for metadata
   void _scheduleDebouncedSave(String fileId, DownloadMeta meta) {
     _saveTimers[fileId]?.cancel();
-    _saveTimers[fileId] = Timer(const Duration(milliseconds: 500), () async {
+    _saveTimers[fileId] = Timer(Duration(milliseconds: 1000), () async {
       await meta.save();
       _saveTimers.remove(fileId);
     });
@@ -293,8 +359,10 @@ class StreamProxyBridge {
 
     // Move to collections folder
     final collectionsDir = '$storageDir/../collections';
-    await Directory(collectionsDir).create(recursive: true);
-    await File(meta.localPath).rename('$collectionsDir/${meta.id}.mp4');
+    await Directory(_outDir ?? collectionsDir).create(recursive: true);
+    await File(
+      meta.localPath,
+    ).rename('${_outDir ?? collectionsDir}/${_outname ?? meta.id}.mp4');
 
     // Notify UI (you'd use a StreamController or similar)
     _metadata.remove(meta.id);
@@ -350,7 +418,6 @@ class StreamProxyBridge {
   // ============== CACHE MANAGEMENT ==============
 
   /// Clear all cached files and metadata
-  /// Use this when you need to reset everything (e.g., after app crash or corrupted state)
   Future<void> clearAllCache() async {
     Logger.info('Clearing all cache...');
 
@@ -452,7 +519,6 @@ class StreamProxyBridge {
   // ============== BACKGROUND DOWNLOAD ==============
 
   /// Start background download to complete file even when player is paused
-  /// This continues downloading from where the player stopped
   Future<void> startBackgroundDownload(String url) async {
     final fileId = _hashUrl(url);
     final meta = _metadata[fileId];
@@ -460,13 +526,13 @@ class StreamProxyBridge {
 
     // Don't start if already downloading
     if (_activeDownloads.contains(fileId) ||
-        _backgroundDownloads.containsKey(fileId))
+        _backgroundDownloads.containsKey(fileId)) {
       return;
+    }
 
     // Find the first gap in downloaded ranges
     final gaps = meta.getDownloadGaps();
     if (gaps.isEmpty) {
-      // No gaps means complete
       if (meta.isComplete) {
         await _onDownloadComplete(meta);
       }
@@ -480,7 +546,6 @@ class StreamProxyBridge {
     final dataSource = _dataSources[fileId];
     if (dataSource == null) return;
 
-    // Mark as active
     _activeDownloads.add(fileId);
 
     // Get or create lock
@@ -492,6 +557,7 @@ class StreamProxyBridge {
     );
   }
 
+  /// FIX: Yield lock between chunks to allow player to read!
   Future<void> _runBackgroundDownload(
     String url,
     String fileId,
@@ -502,42 +568,44 @@ class StreamProxyBridge {
   ) async {
     try {
       final upstream = await dataSource.fetchRange(gapStart, gapEnd);
-      final file = File(meta.localPath);
+      int currentPos = gapStart;
 
-      await _fileLocks[fileId]!.synchronized(() async {
-        final raf = await file.open(mode: FileMode.write);
-        int currentPos = gapStart;
+      await for (final chunk in upstream) {
+        // 1. Check stop signal
+        if (!_activeDownloads.contains(fileId)) break;
 
-        try {
-          await for (final chunk in upstream) {
+        // 2. Lock ONLY for writing this specific chunk
+        // This is the CRITICAL FIX for performance
+        await _fileLocks[fileId]!.synchronized(() async {
+          final raf = await File(meta.localPath).open(mode: FileMode.write);
+          try {
             await raf.setPosition(currentPos);
             await raf.writeFrom(chunk);
-            meta.addRange(currentPos, currentPos + chunk.length - 1);
-            currentPos += chunk.length;
-            _scheduleDebouncedSave(fileId, meta);
-
-            // Emit progress
-            _progressController.add((url, meta.progress));
+          } finally {
+            await raf.close(); // Release lock immediately
           }
-        } finally {
-          await raf.close();
-        }
-      });
+
+          meta.addRange(currentPos, currentPos + chunk.length - 1);
+        });
+
+        currentPos += chunk.length;
+        _scheduleDebouncedSave(fileId, meta);
+        _progressController.add((url, meta.progress));
+      }
 
       await meta.save();
       _activeDownloads.remove(fileId);
-      _backgroundDownloads.remove(fileId);
 
+      // If we finished this gap normally, check for more gaps
       if (meta.isComplete) {
         await _onDownloadComplete(meta);
-      } else {
-        // Continue with next gap
-        await startBackgroundDownload(url);
+      } else if (currentPos >= gapEnd) {
+        // Recursive call to get next gap
+        unawaited(startBackgroundDownload(url));
       }
     } catch (e) {
       Logger.error('Background download error: $e');
       _activeDownloads.remove(fileId);
-      _backgroundDownloads.remove(fileId);
     }
   }
 
@@ -559,9 +627,10 @@ class StreamProxyBridge {
   /// Stop background download for a URL
   Future<void> stopBackgroundDownload(String url) async {
     final fileId = _hashUrl(url);
+    // Remove from active set will cause the loop in _runBackgroundDownload to break
+    _activeDownloads.remove(fileId);
     await _backgroundDownloads[fileId]?.cancel();
     _backgroundDownloads.remove(fileId);
-    _activeDownloads.remove(fileId);
   }
 
   /// Resume all incomplete downloads

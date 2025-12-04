@@ -357,10 +357,12 @@ class DownloadInfo {
   /// Format file size for display
   String get formattedSize {
     if (totalSize < 1024) return '$totalSize B';
-    if (totalSize < 1024 * 1024)
+    if (totalSize < 1024 * 1024) {
       return '${(totalSize / 1024).toStringAsFixed(1)} KB';
-    if (totalSize < 1024 * 1024 * 1024)
+    }
+    if (totalSize < 1024 * 1024 * 1024) {
       return '${(totalSize / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(totalSize / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 

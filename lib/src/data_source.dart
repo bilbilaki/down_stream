@@ -207,16 +207,11 @@ class HttpDataSource implements DataSource {
 /// Data source with custom headers for authenticated requests
 class CustomHeaderDataSource extends HttpDataSource {
   CustomHeaderDataSource({
-    required String url,
-    String? userAgent,
-    ProxyConfig? proxyConfig,
-    Map<String, String>? customHeaders,
-  }) : super(
-          url: url,
-          userAgent: userAgent,
-          proxyConfig: proxyConfig,
-          customHeaders: customHeaders,
-        );
+    required super.url,
+    super.userAgent,
+    super.proxyConfig,
+    super.customHeaders,
+  });
 }
 
 /// Detect MIME type from file content (first few bytes)
