@@ -215,7 +215,7 @@ class StreamProxyBridge {
 
       try {
         int pos = start;
-        const chunkSize = 1560 * 1560; // 1MB chunks for serving
+        const chunkSize = 1024 * 1024; // 1MB chunks for serving
 
         while (pos <= end) {
           // Check if this position is cached
